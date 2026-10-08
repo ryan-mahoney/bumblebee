@@ -1,3 +1,4 @@
+# Modified from Bumblebee 0.8.0 to preserve transcript segments across timestamp gaps.
 defmodule Bumblebee.Audio.SpeechToTextWhisper do
   @moduledoc false
 
@@ -486,6 +487,20 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     context_left_seconds = if(state.time_offset == 0, do: 0, else: context_left_seconds)
 
     time_offset = state.time_offset - context_left_seconds
+
+    # A pending final segment may end before this window even begins (for
+    # example after a long silence). Those predictions do not overlap in time,
+    # so preserve the prior segment instead of aligning coincidental words.
+    state =
+      if options.timestamps? and state.previous_sequences != [] and
+           is_number(state.right_context_end_time) and
+           state.right_context_end_time < time_offset do
+        state
+        |> put_in([:chunk, :end_timestamp_seconds], state.right_context_end_time)
+        |> finish_chunk(tokenizer, options)
+      else
+        state
+      end
 
     # We want to ignore timestamps in the right and left contexts,
     # because splitting on those would cause issues with merging
